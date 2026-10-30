@@ -1,3 +1,5 @@
+![Banner](banner.png)
+
 # file-comment-stripper
 Removes comments from source code files to reduce attack surface and potential information leakage. Supports configurable comment syntax for various languages. - Focused on File operations and analysis
 
