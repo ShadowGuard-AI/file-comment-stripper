@@ -33,6 +33,9 @@ def strip_default(text):
     count = 0
     while i < n:
         # Triple-quoted strings first
+        # Triple-quoted strings are checked before single quotes. In the other
+        # order a docstring opener would be read as an empty string followed by
+        # a stray quote, and the rest of the file would be parsed as code.
         if text.startswith('"""', i) or text.startswith("'''", i):
             quote = text[i:i+3]
             end = text.find(quote, i+3)
@@ -44,6 +47,9 @@ def strip_default(text):
         ch = text[i]
         if ch in ('"', "'"):
             j = i + 1
+            # Inside a string I honour backslash escapes and stop at a newline. The
+            # newline stop is a resync rule: an unterminated string ends at the line
+            # boundary instead of swallowing the rest of the file as string content.
             while j < n:
                 if text[j] == '\\' and j + 1 < n:
                     j += 2; continue
@@ -53,6 +59,9 @@ def strip_default(text):
                     break
                 j += 1
             out.append(text[i:j]); i = j; continue
+        # Strings are consumed before this check runs at any position, so a /*
+        # inside a string literal never opens a block comment. An unterminated
+        # block comment eats the rest of the file and still counts as one.
         if text.startswith('/*', i):
             end = text.find('*/', i+2)
             count += 1
@@ -63,6 +72,9 @@ def strip_default(text):
             continue
         if text.startswith('//', i) or ch == '#':
             count += 1
+            # The spaces that sat before a line comment would survive as trailing
+            # whitespace on the code that remains, so they are popped from the
+            # output already emitted. The newline itself is kept.
             _trim_trailing_spaces(out)
             end = text.find('\n', i)
             if end == -1:
@@ -73,6 +85,10 @@ def strip_default(text):
         out.append(ch); i += 1
     return ''.join(out), count
 
+# The custom path is line based and knows nothing about strings. A
+# pattern that matches inside a string literal cuts the line there
+# anyway. That is the documented trade for a caller supplied pattern,
+# and the reason the default styles use the state machine above.
 def strip_custom(text, pattern):
     out_lines = []
     count = 0
@@ -120,6 +136,9 @@ def remove_comments(input_file, output_file, comment_style, strip_shebang, backu
         return 1
 
     # Shebang handling: preserve verbatim unless --strip_shebang removes the whole line.
+    # The shebang is split off before stripping and glued back at the write.
+    # Without this step the # rule would eat the first line, and a stripped
+    # script would lose its interpreter line even when nobody asked for that.
     shebang = ''
     body = text
     if text.startswith('#!'):
@@ -145,6 +164,8 @@ def remove_comments(input_file, output_file, comment_style, strip_shebang, backu
         logging.error("Nothing stripped: no comments were found.")
         return 1
 
+    # The backup is taken after the nothing-stripped check, so a run that
+    # changes nothing leaves no .bak file behind either.
     if backup:
         backup_file = input_file + ".bak"
         try:
